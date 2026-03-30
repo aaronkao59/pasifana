@@ -1,159 +1,197 @@
 import streamlit as st
+import time
+import os
 import random
 from gtts import gTTS
 from io import BytesIO
-import time
 
-# --- 10-5 阿美語詞彙規範與造句模組 (App-Lexicon-CRF v6.5) ---
-# 權威鎖定：僅保留指定詞彙，並生成標準造句。
-VOCABULARY = [
-    {
-        "amis": "salama",
-        "ch": "玩耍",
-        "sentence_amis": "Maolah koya wawa a misalama i lawac no riyar.",
-        "sentence_ch": "那個小孩喜歡在海邊玩耍。"
-    },
-    {
-        "amis": "lonan",
-        "ch": "車子 / 交通工具",
-        "sentence_amis": "Cahoay ka tayni koya lonan no siciw.",
-        "sentence_ch": "市長的那輛車子還沒到。"
-    },
-    {
-        "amis": "tafok",
-        "ch": "沙子",
-        "sentence_amis": "Adiadiay ko tafok itini i liyal.",
-        "sentence_ch": "這裏海邊的沙子很多。"
-    },
-    {
-        "amis": "dangoy",
-        "ch": "游泳",
-        "sentence_amis": "Matayal cingra adihay ko 'alo, maolah a midangoy.",
-        "sentence_ch": "他工作的地方有很多河流，他喜歡游泳。"
-    },
-    {
-        "amis": "ciaal",
-        "ch": "肚子",
-        "sentence_amis": "Adada ko ciaal no ruma a wawa.",
-        "sentence_ch": "有些小孩肚子痛。"
+# --- 0. 系統配置 (維持原始視覺設定) ---
+st.set_page_config(
+    page_title="阿美語學習 - 科技海洋", 
+    page_icon="🌊", 
+    layout="centered", 
+    initial_sidebar_state="collapsed"
+)
+
+# --- CSS 視覺魔法 (維持原始深海螢光科技風)  ---
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Noto+Sans+TC:wght@400;700&display=swap');
+
+    .stApp { 
+        background-color: #000810;
+        background-image: radial-gradient(circle at 50% 0%, #0D47A1 0%, #000810 80%);
+        font-family: 'Noto Sans TC', sans-serif;
+        color: #E0F7FA;
     }
+    
+    .header-container {
+        background: rgba(13, 71, 161, 0.3);
+        border: 1px solid #00E5FF;
+        box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+        border-radius: 15px;
+        padding: 30px;
+        text-align: center;
+        margin-bottom: 40px;
+        backdrop-filter: blur(10px);
+    }
+    
+    .main-title {
+        font-family: 'Roboto Mono', monospace;
+        color: #00E5FF;
+        font-size: 40px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        text-shadow: 0 0 10px #00E5FF;
+        margin: 0;
+    }
+
+    .word-card {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        padding: 20px 10px;
+        text-align: center;
+        border: 1px solid rgba(0, 229, 255, 0.2);
+        height: 100%;
+        margin-bottom: 15px;
+    }
+
+    .amis-word { font-size: 22px; font-weight: 700; color: #FFFFFF; margin-bottom: 5px; font-family: 'Roboto Mono', monospace; }
+    .zh-word { font-size: 16px; color: #80DEEA; }
+
+    .sentence-box {
+        background: linear-gradient(90deg, rgba(0,229,255,0.05) 0%, rgba(0,0,0,0) 100%);
+        border-left: 4px solid #FF4081;
+        padding: 20px;
+        margin-bottom: 20px;
+        border-radius: 0 10px 10px 0;
+    }
+    .sentence-amis { font-size: 18px; color: #FF80AB; font-weight: 700; margin-bottom: 8px; }
+    .sentence-zh { font-size: 15px; color: #B2EBF2; }
+
+    .stButton>button { width: 100%; border-radius: 5px; background: transparent; border: 2px solid #00E5FF; color: #00E5FF !important; font-weight: bold; }
+    .stButton>button:hover { background: #00E5FF; color: #000 !important; }
+
+    .stTabs [data-baseweb="tab"] {
+        color: #FFFFFF !important; 
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-radius: 5px;
+        padding: 10px 20px;
+        font-weight: bold;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background-color: #00E5FF !important;
+        color: #000000 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 1. 資料更新 (依照 10-5 阿美語詞彙規範更新) [cite: 29, 31, 40] ---
+VOCABULARY = [
+    {"amis": "salama", "zh": "玩耍", "emoji": "🎮", "s_amis": "Maolah koya wawa a misalama i lawac no riyar.", "s_zh": "那個小孩喜歡在海邊玩耍。"},
+    {"amis": "lonan", "zh": "車子", "emoji": "🚗", "s_amis": "Cahoay ka tayni koya lonan no siciw.", "s_zh": "市長的那輛車子還沒到。"},
+    {"amis": "tafok", "zh": "沙子", "emoji": "🏖️", "s_amis": "Adiadiay ko tafok itini i liyal.", "s_zh": "這裏海邊的沙子很多。"},
+    {"amis": "dangoy", "zh": "游泳", "emoji": "🏊", "s_amis": "Matayal cingra adihay ko 'alo, maolah a midangoy.", "s_zh": "他工作的地方有很多河流，他喜歡游泳。"},
+    {"amis": "ciaal", "zh": "肚子", "emoji": "🍕", "s_amis": "Adada ko ciaal no ruma a wawa.", "s_zh": "有些小孩肚子痛。"}
 ]
 
-# --- 介面設定 (UIUX-CRF v9.0) ---
-st.set_page_config(page_title="Pangcah 詞彙學習王", page_icon="🌴", layout="centered")
-
-# 自定義 CSS (提升認知鎖定與空間適配)
-st.markdown("""
-<style>
-    .main-title { font-size: 2.5rem; color: #2E7D32; text-align: center; font-weight: 700; margin-bottom: 20px; }
-    .word-card { background-color: #F1F8E9; border-radius: 15px; padding: 25px; border-left: 5px solid #8BC34A; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .amis-word { font-size: 3rem; color: #1B5E20; font-weight: 800; }
-    .amis-sentence { font-size: 1.2rem; color: #424242; font-style: italic; margin-top: 10px; }
-    .ch-text { font-size: 1.2rem; color: #616161; margin-top: 5px; }
-    .stButton>button { width: 100%; background-color: #8BC34A; color: white; border-radius: 20px; border: none; transition: all 0.3s; }
-    .stButton>button:hover { background-color: #689F38; transform: scale(1.02); }
-</style>
-""", unsafe_allow_html=True)
-
-# --- 核心功能函數 ---
-
+# --- 2. 語音核心 (診斷優化版)  ---
 def play_audio(text):
-    """
-    執行 API-B: 語音生成與播放
-    使用 gTTS (印尼語 `id` 模擬南島語系發音)
-    """
     try:
-        # 清洗文本，只取單字部分或句子主體
-        tts = gTTS(text=text, lang='id')
+        # 使用印尼語 (id) 模擬南島語系發音 [cite: 34]
+        tts = gTTS(text=text, lang='id') 
         fp = BytesIO()
         tts.write_to_fp(fp)
+        fp.seek(0)
         st.audio(fp, format='audio/mp3')
-    except Exception as e:
-        st.error(f"語音生成失敗 (安全邊際防禦觸發): {e}")
+    except:
+        st.caption("🔇 語音生成失敗")
 
-def get_next_word():
-    """獲取與上次不同的新單字 (認知熵控制)"""
-    if len(VOCABULARY) < 2:
-        return VOCABULARY[0]
-    
-    current_word = st.session_state.get('current_word', None)
-    next_word = random.choice(VOCABULARY)
-    
-    while current_word and next_word['amis'] == current_word['amis']:
-        next_word = random.choice(VOCABULARY)
-    return next_word
+# --- 3. 隨機出題邏輯 ---
+def init_quiz():
+    st.session_state.score = 0
+    st.session_state.current_q = 0
+    # 隨機選三個題目
+    st.session_state.quiz_pool = random.sample(VOCABULARY, 3)
 
-# --- Session State 初始化 ---
-if 'current_word' not in st.session_state:
-    st.session_state.current_word = random.choice(VOCABULARY)
-if 'quiz_options' not in st.session_state:
-    st.session_state.quiz_options = []
-if 'quiz_feedback' not in st.session_state:
-    st.session_state.quiz_feedback = ""
+if 'quiz_pool' not in st.session_state:
+    init_quiz()
 
-# --- 主介面渲染 ---
-st.markdown("<div class='main-title'>Pangcah 詞彙學習王</div>", unsafe_allow_html=True)
+# --- 4. 介面呈現函數 ---
+def show_learning_mode():
+    st.markdown("<h3 style='color:#00E5FF; text-align:center;'>核心單字模組</h3>", unsafe_allow_html=True)
+    cols = st.columns(len(VOCABULARY))
+    for idx, item in enumerate(VOCABULARY):
+        with cols[idx]:
+            st.markdown(f"""
+            <div class="word-card">
+                <div style="font-size:30px;">{item['emoji']}</div>
+                <div class="amis-word">{item['amis']}</div>
+                <div class="zh-word">{item['zh']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("🔊", key=f"v_{idx}"):
+                play_audio(item['amis'])
 
-tab1, tab2 = st.tabs(["📖 單字學習", "📝 挑戰測驗"])
-
-# --- Tab 1: 單字學習 ---
-with tab1:
-    word = st.session_state.current_word
-    
-    st.markdown(f"""
-    <div class='word-card'>
-        <div class='amis-word'>{word['amis']}</div>
-        <div class='ch-text'>中文意思：<b>{word['ch']}</b></div>
-        <hr style='border:1px solid #C5E1A5'>
-        <div class='amis-sentence'>例句：{word['sentence_amis']}</div>
-        <div class='ch-text'>（{word['sentence_ch']}）</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔊 聽單字發音", key="play_word"):
-            play_audio(word['amis'])
-            
-    with col2:
-        if st.button("🔊 聽例句發音", key="play_sentence"):
-            # 句子較長，發音速度調整稍慢 (gTTS 暫不支持速度參數，此處為概念示意)
-            play_audio(word['sentence_amis'])
-            
     st.markdown("---")
-    if st.button("換一個單字 ➡️", key="next_word"):
-        st.session_state.current_word = get_next_word()
-        # 切換單字時清空測驗狀態
-        st.session_state.quiz_feedback = "" 
-        st.rerun()
+    st.markdown("<h3 style='color:#00E5FF; text-align:center;'>語法句型模組</h3>", unsafe_allow_html=True)
+    for idx, item in enumerate(VOCABULARY):
+        st.markdown(f"""
+        <div class="sentence-box">
+            <div class="sentence-amis">{item['emoji']} {item['s_amis']}</div>
+            <div class="sentence-zh">{item['s_zh']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("播放句子語音", key=f"s_{idx}"):
+            play_audio(item['s_amis'])
 
-# --- Tab 2: 挑戰測驗 (測驗模型-CRF v1.2) ---
-with tab2:
-    st.subheader("看族語，選中文")
-    quiz_word = st.session_state.current_word
-    
-    st.markdown(f"""
-    <div style='text-align:center; padding: 20px; background:#E8F5E9; border-radius:10px; margin-bottom:20px;'>
-        <span style='font-size:3rem; color:#1B5E20; font-weight:800;'>{quiz_word['amis']}</span>
+def show_quiz_mode():
+    if st.session_state.current_q < 3:
+        target = st.session_state.quiz_pool[st.session_state.current_q]
+        st.markdown(f"### 挑戰任務 {st.session_state.current_q + 1} / 3")
+        st.markdown(f"<h2 style='color:#FF4081; text-align:center;'>{target['amis']}</h2>", unsafe_allow_html=True)
+        
+        # 產生選項
+        others = [v['zh'] for v in VOCABULARY if v['zh'] != target['zh']]
+        opts = random.sample(others, 2) + [target['zh']]
+        random.shuffle(opts)
+
+        cols = st.columns(3)
+        for i, opt in enumerate(opts):
+            with cols[i]:
+                if st.button(opt):
+                    if opt == target['zh']:
+                        st.balloons()
+                        st.session_state.score += 1
+                        st.session_state.current_q += 1
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("選錯囉！")
+    else:
+        st.success(f"任務完成！得分：{st.session_state.score} / 3")
+        if st.button("重新開始"):
+            init_quiz()
+            st.rerun()
+
+# --- 5. 主程式入口 ---
+def main():
+    st.markdown("""
+    <div class="header-container">
+        <h1 class="main-title">O SAKASALAMA</h1>
+        <div style="color:#B2EBF2;">生活詞彙學習系統</div>
     </div>
     """, unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["🌊 單字與例句", "🎮 挑戰任務"])
+    
+    with tab1:
+        show_learning_mode()
+    with tab2:
+        show_quiz_mode()
 
-    # 生成選項 (需確保包含正確答案)
-    if not st.session_state.quiz_options or st.session_state.feedback_triggered:
-        correct_answer = quiz_word['ch']
-        # 從所有單字中尋找錯誤選項
-        all_ch = [w['ch'] for w in VOCABULARY if w['ch'] != correct_answer]
-        # 隨機選2個錯誤答案，連同正確答案組成3個選項
-        options = random.sample(all_ch, min(len(all_ch), 2)) + [correct_answer]
-        random.shuffle(options)
-        st.session_state.quiz_options = options
-        st.session_state.feedback_triggered = False # 重設旗標
-
-    # 顯示測驗選項
-    for option in st.session_state.quiz_options:
-        if st.button(option, key=f"btn_{option}"):
-            if option == quiz_word['ch']:
-                st.session_state.quiz_feedback = "🎉 太棒了！答對了！"
-                st.balloons()
-            else:
-                st.session_state.quiz_feedback = f
+if __name__ == "__main__":
+    main()
